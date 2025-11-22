@@ -105,105 +105,112 @@ const EmployerDashboard = () => {
     setJobForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Xử lý Đăng tin - FIXED VERSION cho backend schema
+  // Xử lý Đăng tin - Phiên bản có retry
   const handleJobSubmit = async (e) => {
     e.preventDefault();
     try {
       setError('');
-      
+      setLoading(true);
+
+      console.log('🟡 Bắt đầu xử lý đăng tin...');
+
       // Validation cơ bản
-      if (!jobForm.title?.trim() || !jobForm.location?.trim() || !jobForm.description?.trim() || !jobForm.company?.trim()) {
-        return setError('Vui lòng điền đầy đủ các trường bắt buộc (tiêu đề, công ty, địa điểm, mô tả).');
+      if (!jobForm.title || !jobForm.location || !jobForm.description) {
+        const errorMsg = 'Vui lòng điền đầy đủ các trường bắt buộc (tiêu đề, địa điểm, mô tả)';
+        console.log('❌ Validation failed:', errorMsg);
+        setLoading(false);
+        return setError(errorMsg);
       }
 
-      // 🔧 FIX: Mapping đúng với backend schema
-      const finalJobData = {
-        title: jobForm.title.trim(),
-        company: jobForm.company.trim(),
-        location: jobForm.location.trim(),
-        description: jobForm.description.trim(),
-        salary: jobForm.salary?.trim() || 'Thương lượng',
-        
-        // 🔥 QUAN TRỌNG: Sử dụng đúng field names từ backend
+      // Chuẩn bị dữ liệu đơn giản - CHỈ CÁC TRƯỜNG THỰC SỰ CẦN THIẾT
+      const jobData = {
+        title: jobForm.title,
+        company: jobForm.company || user?.name || 'Công ty của tôi',
+        location: jobForm.location,
+        description: jobForm.description,
         jobType: jobForm.jobType,
-        category: jobForm.category,
-        
-        requirements: jobForm.requirements?.trim() || 'Không yêu cầu',
-        benefits: jobForm.benefits?.trim() || 'Theo chính sách công ty',
-        contactEmail: jobForm.contactEmail?.trim() || user?.email,
-        contactPhone: jobForm.contactPhone?.trim() || '',
-        
-        // 🔥 FIX: Sử dụng đúng field name cho deadline
-        applicationDeadline: jobForm.applicationDeadline || null,
-        
-        workHours: jobForm.workHours?.trim() || 'Linh hoạt',
-        vacancies: parseInt(jobForm.vacancies) || 1,
-        experience: jobForm.experience,
-        education: jobForm.education
-
-        // 🚨 LƯU Ý: Backend sẽ tự động thêm employer từ token
-        // KHÔNG cần gửi employerId hoặc postedBy
+        category: jobForm.category
       };
 
-      console.log('🚀 Dữ liệu cuối cùng gửi đến backend:', JSON.stringify(finalJobData, null, 2));
+      // Thêm các trường optional nếu có
+      if (jobForm.salary) jobData.salary = jobForm.salary;
+      if (jobForm.requirements) jobData.requirements = jobForm.requirements;
+      if (jobForm.benefits) jobData.benefits = jobForm.benefits;
+      if (jobForm.contactEmail) jobData.contactEmail = jobForm.contactEmail;
+      if (jobForm.contactPhone) jobData.contactPhone = jobForm.contactPhone;
+      if (jobForm.workHours) jobData.workHours = jobForm.workHours;
+      if (jobForm.vacancies) jobData.vacancies = jobForm.vacancies;
+      if (jobForm.experience) jobData.experience = jobForm.experience;
+      if (jobForm.education) jobData.education = jobForm.education;
+      if (jobForm.applicationDeadline) jobData.applicationDeadline = jobForm.applicationDeadline;
 
-      // Gửi request
-      const response = await apiService.createJob(finalJobData);
-      
-      console.log('✅ Phản hồi từ backend:', response);
+      console.log('📤 Dữ liệu gửi đến backend:', jobData);
 
-      if (response.success) {
-        setShowJobModal(false);
-        
-        // Reset form
-        setJobForm({
-          title: '',
-          company: user?.company || user?.companyName || user?.name || '',
-          location: '',
-          salary: '', 
-          jobType: 'Bán thời gian',
-          category: 'Khác',
-          description: '',
-          requirements: '',
-          benefits: '',
-          contactEmail: user?.email || '',
-          contactPhone: user?.phone || '',
-          applicationDeadline: '',
-          workHours: '',
-          vacancies: 1,
-          experience: 'Không yêu cầu',
-          education: 'Không yêu cầu'
-        });
-        
-        await loadDashboardData();
-        alert('✅ Đăng tin tuyển dụng thành công!');
-      } else {
-        setError('Đăng tin thất bại: ' + (response.message || 'Lỗi không xác định'));
+      // Gửi request với retry logic
+      let retries = 3;
+      let lastError = null;
+
+      while (retries > 0) {
+        try {
+          const response = await apiService.createJob(jobData);
+          
+          console.log('✅ Phản hồi từ backend:', response);
+
+          if (response.success) {
+            setShowJobModal(false);
+            
+            // Reset form
+            setJobForm({
+              title: '',
+              company: user?.company || user?.companyName || user?.name || '',
+              location: '',
+              salary: '', 
+              jobType: 'Bán thời gian',
+              category: 'Khác',
+              description: '',
+              requirements: '',
+              benefits: '',
+              contactEmail: user?.email || '',
+              contactPhone: user?.phone || '',
+              applicationDeadline: '',
+              workHours: '',
+              vacancies: 1,
+              experience: 'Không yêu cầu',
+              education: 'Không yêu cầu'
+            });
+            
+            await loadDashboardData();
+            alert('✅ Đăng tin tuyển dụng thành công!');
+            setLoading(false);
+            return;
+          } else {
+            throw new Error(response.message || 'Đăng tin thất bại');
+          }
+        } catch (err) {
+          lastError = err;
+          retries--;
+          console.log(`🔄 Retry ${3 - retries}/3 after error:`, err.message);
+          
+          if (retries > 0) {
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+          }
+        }
       }
+
+      // Nếu hết retry mà vẫn lỗi
+      throw lastError;
 
     } catch (err) {
       console.error('❌ Lỗi khi đăng tin:', err);
+      setLoading(false);
       
-      // Hiển thị lỗi chi tiết
-      if (err.response?.data) {
-        const errorData = err.response.data;
-        console.log("📋 Chi tiết lỗi từ server:", errorData);
-        
-        if (errorData.errors) {
-          // Lỗi validation chi tiết
-          const validationErrors = Object.values(errorData.errors)
-            .map(error => error.message || error)
-            .join('\n• ');
-          setError(`Lỗi validation:\n• ${validationErrors}`);
-        } else if (errorData.message) {
-          setError(errorData.message);
-        } else {
-          setError('Lỗi khi đăng tin: ' + JSON.stringify(errorData));
-        }
-      } else if (err.message) {
-        setError(err.message);
+      // Hiển thị lỗi thân thiện
+      if (err.message?.includes('Validation failed')) {
+        setError('Dữ liệu không hợp lệ. Vui lòng kiểm tra lại thông tin.');
+      } else if (err.message?.includes('Network') || err.message?.includes('fetch')) {
+        setError('Lỗi kết nối mạng. Vui lòng kiểm tra internet và thử lại.');
       } else {
-        setError('Lỗi kết nối đến server');
+        setError(err.message || 'Lỗi không xác định khi đăng tin');
       }
     }
   };
@@ -603,8 +610,21 @@ const EmployerDashboard = () => {
                 </div>
 
                 <div className="form-actions">
-                  <button type="button" className="btn-secondary" onClick={() => setShowJobModal(false)}>Hủy</button>
-                  <button type="submit" className="btn-primary">Đăng tin</button>
+                  <button 
+                    type="button" 
+                    className="btn-secondary" 
+                    onClick={() => setShowJobModal(false)}
+                    disabled={loading}
+                  >
+                    Hủy
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="btn-primary"
+                    disabled={loading}
+                  >
+                    {loading ? 'Đang đăng tin...' : 'Đăng tin'}
+                  </button>
                 </div>
               </div>
             </form>
