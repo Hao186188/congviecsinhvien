@@ -23,7 +23,6 @@ class ApiService {
     this.currentUser = null;
     localStorage.removeItem('token');
     localStorage.removeItem('currentUser');
-    // Tùy chọn: Xóa các item khác nếu cần
   }
 
   /**
@@ -61,14 +60,18 @@ class ApiService {
     };
 
     try {
+      console.log(`🔄 API Call: ${config.method || 'GET'} ${url}`);
+      if (body && !(body instanceof FormData)) {
+        console.log('📦 Request Data:', body);
+      }
+
       const response = await fetch(url, config);
 
       // Xử lý trường hợp Token hết hạn hoặc không hợp lệ (401)
       if (response.status === 401) {
         this.removeToken();
-        // Tùy chọn: Redirect về trang login
         if (window.location.pathname !== '/login') {
-             window.location.href = '/login';
+          window.location.href = '/login';
         }
         throw new Error('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
       }
@@ -83,15 +86,28 @@ class ApiService {
         data = await response.text();
       }
 
+      console.log(`📨 Response [${response.status}]:`, data);
+
       if (!response.ok) {
-        // Trích xuất thông báo lỗi từ server (thường là field 'message' hoặc 'error')
-        const errorMessage = data?.message || data?.error || `Lỗi HTTP! Status: ${response.status}`;
-        throw new Error(errorMessage);
+        // Trích xuất thông báo lỗi từ server
+        const errorMessage = data?.message || data?.error || `HTTP Error ${response.status}`;
+        
+        // Tạo error object với thông tin chi tiết
+        const error = new Error(errorMessage);
+        error.response = { data, status: response.status };
+        error.status = response.status;
+        
+        // Thêm validation errors nếu có
+        if (data.errors) {
+          error.validationErrors = data.errors;
+        }
+        
+        throw error;
       }
 
       return data;
     } catch (error) {
-      console.error(`API request failed [${endpoint}]:`, error);
+      console.error(`❌ API request failed [${endpoint}]:`, error);
       throw error;
     }
   }
@@ -103,12 +119,13 @@ class ApiService {
       body: userData,
     });
 
-    if (result.token) { // Giả sử backend trả về trực tiếp { token, user }
-      this.setToken(result.token);
-      this.setCurrentUser(result.user);
-    } else if (result.data && result.data.token) { // Hoặc cấu trúc { data: { token, user } }
-      this.setToken(result.data.token);
-      this.setCurrentUser(result.data.user);
+    // Xử lý linh hoạt cấu trúc trả về
+    const token = result.token || result.data?.token;
+    const user = result.user || result.data?.user;
+
+    if (token) {
+      this.setToken(token);
+      this.setCurrentUser(user);
     }
 
     return result;
@@ -120,7 +137,7 @@ class ApiService {
       body: credentials,
     });
 
-    // Xử lý linh hoạt cấu trúc trả về của Backend
+    // Xử lý linh hoạt cấu trúc trả về
     const token = result.token || result.data?.token;
     const user = result.user || result.data?.user;
 
@@ -133,15 +150,14 @@ class ApiService {
   }
 
   async logout() {
-    // Nếu backend có endpoint logout để hủy token
     try {
-        if (this.token) {
-            await this.request('/auth/logout', { method: 'POST' });
-        }
+      if (this.token) {
+        await this.request('/auth/logout', { method: 'POST' });
+      }
     } catch (error) {
-        console.warn('Logout server failed, cleaning local only');
+      console.warn('Logout server failed, cleaning local only');
     } finally {
-        this.removeToken();
+      this.removeToken();
     }
   }
 
@@ -165,9 +181,8 @@ class ApiService {
 
   // ========== JOB METHODS ==========
   async getJobs(params = {}) {
-    // Lọc bỏ các params null/undefined/rỗng
     const cleanParams = Object.fromEntries(
-        Object.entries(params).filter(([_, v]) => v != null && v !== '')
+      Object.entries(params).filter(([_, v]) => v != null && v !== '')
     );
     const queryString = new URLSearchParams(cleanParams).toString();
     return this.request(`/jobs?${queryString}`);
@@ -208,14 +223,13 @@ class ApiService {
 
   // ========== APPLICATION METHODS ==========
   async applyForJob(applicationData) {
-    // applicationData thường bao gồm jobId, coverLetter, v.v.
     return this.request('/applications', {
       method: 'POST',
       body: applicationData,
     });
   }
 
-  async getMyApplications(params = {}) {
+  async getStudentApplications(params = {}) {
     const queryString = new URLSearchParams(params).toString();
     return this.request(`/applications/student/my-applications?${queryString}`);
   }
@@ -228,7 +242,7 @@ class ApiService {
   async updateApplicationStatus(applicationId, statusData) {
     return this.request(`/applications/${applicationId}/status`, {
       method: 'PUT',
-      body: statusData, // VD: { status: 'accepted' }
+      body: statusData,
     });
   }
 
@@ -242,15 +256,13 @@ class ApiService {
     });
   }
 
-  // ========== USER METHODS (File Uploads) ==========
+  // ========== USER METHODS ==========
   async getUserProfile(userId = null) {
     const endpoint = userId ? `/users/profile/${userId}` : '/users/profile';
     return this.request(endpoint);
   }
 
   async uploadAvatar(formData) {
-    // Đã sửa: Sử dụng this.request để tận dụng xử lý Token và Error
-    // FormData sẽ được xử lý tự động trong hàm request
     return this.request('/users/upload-avatar', {
       method: 'POST',
       body: formData,
@@ -290,7 +302,6 @@ class ApiService {
   }
 
   async updateCompanyProfile(companyId, companyData) {
-    // Hỗ trợ cả JSON và FormData (nếu update logo công ty)
     return this.request(`/companies/${companyId}`, {
       method: 'PUT',
       body: companyData,
@@ -309,45 +320,32 @@ class ApiService {
 
   // Helper: Check user roles
   isEmployer() {
-    return this.currentUser?.userType === 'employer' || this.currentUser?.role === 'employer';
+    return this.currentUser?.userType === 'employer';
   }
 
   isStudent() {
-    return this.currentUser?.userType === 'student' || this.currentUser?.role === 'student';
+    return this.currentUser?.userType === 'student';
   }
 
   isAdmin() {
-    return this.currentUser?.userType === 'admin' || this.currentUser?.role === 'admin';
+    return this.currentUser?.userType === 'admin';
   }
 
   // Get current user data safely
   getCurrentUserData() {
     return this.currentUser;
   }
-    // ========== EXTRA METHODS YOU REQUESTED ==========
 
-  async getEmployerJobs() {
-    return this.request('/jobs/employer/my-jobs');
+  // Helper: Format error message for display
+  formatErrorMessage(error) {
+    if (error.validationErrors) {
+      // Format validation errors
+      return Object.values(error.validationErrors)
+        .map(err => err.message || err)
+        .join('\n');
+    }
+    return error.message || 'Có lỗi xảy ra';
   }
-
-  async getEmployerApplications() {
-    return this.request('/applications/employer/job-applications');
-  }
-
-  async createJob(jobData) {
-    return this.request('/jobs', {
-      method: 'POST',
-      body: jobData,
-    });
-  }
-
-  async updateApplicationStatus(applicationId, statusData) {
-    return this.request(`/applications/${applicationId}/status`, {
-      method: 'PUT',
-      body: statusData,
-    });
-  }
-
 }
 
 // Create singleton instance
