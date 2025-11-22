@@ -3,7 +3,9 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 class ApiService {
   constructor() {
     this.token = localStorage.getItem('token');
-    this.currentUser = JSON.parse(localStorage.getItem('currentUser'));
+    this.currentUser = localStorage.getItem('currentUser') 
+      ? JSON.parse(localStorage.getItem('currentUser')) 
+      : null;
   }
 
   setToken(token) {
@@ -21,32 +23,57 @@ class ApiService {
     this.currentUser = null;
     localStorage.removeItem('token');
     localStorage.removeItem('currentUser');
+    // Tùy chọn: Xóa các item khác nếu cần
   }
 
+  /**
+   * Hàm request trung tâm xử lý mọi gọi API
+   */
   async request(endpoint, options = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
-    
-    const config = {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      ...options,
+
+    // Cấu hình headers mặc định
+    const headers = {
+      ...options.headers,
     };
 
+    // Tự động thêm Authorization header nếu có token
     if (this.token) {
-      config.headers.Authorization = `Bearer ${this.token}`;
+      headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    // Convert body to JSON if it exists and is an object
-    if (options.body && typeof options.body === 'object') {
-      config.body = JSON.stringify(options.body);
+    // Xử lý Body và Content-Type
+    let body = options.body;
+
+    // Kiểm tra nếu body là FormData (để upload file)
+    if (body instanceof FormData) {
+      // KHÔNG set Content-Type, để trình duyệt tự set multipart/form-data kèm boundary
+    } else if (body && typeof body === 'object') {
+      // Nếu là object thường, chuyển thành JSON và set header
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(body);
     }
+
+    const config = {
+      ...options,
+      headers,
+      body,
+    };
 
     try {
       const response = await fetch(url, config);
-      
-      // Handle non-JSON responses
+
+      // Xử lý trường hợp Token hết hạn hoặc không hợp lệ (401)
+      if (response.status === 401) {
+        this.removeToken();
+        // Tùy chọn: Redirect về trang login
+        if (window.location.pathname !== '/login') {
+             window.location.href = '/login';
+        }
+        throw new Error('Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.');
+      }
+
+      // Xử lý response body
       const contentType = response.headers.get('content-type');
       let data;
       
@@ -57,12 +84,14 @@ class ApiService {
       }
 
       if (!response.ok) {
-        throw new Error(data.message || `HTTP error! status: ${response.status}`);
+        // Trích xuất thông báo lỗi từ server (thường là field 'message' hoặc 'error')
+        const errorMessage = data?.message || data?.error || `Lỗi HTTP! Status: ${response.status}`;
+        throw new Error(errorMessage);
       }
 
       return data;
     } catch (error) {
-      console.error('API request failed:', error);
+      console.error(`API request failed [${endpoint}]:`, error);
       throw error;
     }
   }
@@ -73,12 +102,15 @@ class ApiService {
       method: 'POST',
       body: userData,
     });
-    
-    if (result.data && result.data.token) {
+
+    if (result.token) { // Giả sử backend trả về trực tiếp { token, user }
+      this.setToken(result.token);
+      this.setCurrentUser(result.user);
+    } else if (result.data && result.data.token) { // Hoặc cấu trúc { data: { token, user } }
       this.setToken(result.data.token);
       this.setCurrentUser(result.data.user);
     }
-    
+
     return result;
   }
 
@@ -87,13 +119,30 @@ class ApiService {
       method: 'POST',
       body: credentials,
     });
-    
-    if (result.data && result.data.token) {
-      this.setToken(result.data.token);
-      this.setCurrentUser(result.data.user);
+
+    // Xử lý linh hoạt cấu trúc trả về của Backend
+    const token = result.token || result.data?.token;
+    const user = result.user || result.data?.user;
+
+    if (token) {
+      this.setToken(token);
+      this.setCurrentUser(user);
     }
-    
+
     return result;
+  }
+
+  async logout() {
+    // Nếu backend có endpoint logout để hủy token
+    try {
+        if (this.token) {
+            await this.request('/auth/logout', { method: 'POST' });
+        }
+    } catch (error) {
+        console.warn('Logout server failed, cleaning local only');
+    } finally {
+        this.removeToken();
+    }
   }
 
   async getCurrentUser() {
@@ -116,7 +165,11 @@ class ApiService {
 
   // ========== JOB METHODS ==========
   async getJobs(params = {}) {
-    const queryString = new URLSearchParams(params).toString();
+    // Lọc bỏ các params null/undefined/rỗng
+    const cleanParams = Object.fromEntries(
+        Object.entries(params).filter(([_, v]) => v != null && v !== '')
+    );
+    const queryString = new URLSearchParams(cleanParams).toString();
     return this.request(`/jobs?${queryString}`);
   }
 
@@ -155,6 +208,7 @@ class ApiService {
 
   // ========== APPLICATION METHODS ==========
   async applyForJob(applicationData) {
+    // applicationData thường bao gồm jobId, coverLetter, v.v.
     return this.request('/applications', {
       method: 'POST',
       body: applicationData,
@@ -174,7 +228,7 @@ class ApiService {
   async updateApplicationStatus(applicationId, statusData) {
     return this.request(`/applications/${applicationId}/status`, {
       method: 'PUT',
-      body: statusData,
+      body: statusData, // VD: { status: 'accepted' }
     });
   }
 
@@ -188,39 +242,26 @@ class ApiService {
     });
   }
 
-  // ========== USER METHODS ==========
+  // ========== USER METHODS (File Uploads) ==========
   async getUserProfile(userId = null) {
     const endpoint = userId ? `/users/profile/${userId}` : '/users/profile';
     return this.request(endpoint);
   }
 
   async uploadAvatar(formData) {
-    // Note: This requires special handling for file upload
-    const url = `${API_BASE_URL}/users/upload-avatar`;
-    const config = {
+    // Đã sửa: Sử dụng this.request để tận dụng xử lý Token và Error
+    // FormData sẽ được xử lý tự động trong hàm request
+    return this.request('/users/upload-avatar', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-      },
       body: formData,
-    };
-
-    const response = await fetch(url, config);
-    return response.json();
+    });
   }
 
   async uploadResume(formData) {
-    const url = `${API_BASE_URL}/users/upload-resume`;
-    const config = {
+    return this.request('/users/upload-resume', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.token}`,
-      },
       body: formData,
-    };
-
-    const response = await fetch(url, config);
-    return response.json();
+    });
   }
 
   async getSavedJobs() {
@@ -249,6 +290,7 @@ class ApiService {
   }
 
   async updateCompanyProfile(companyId, companyData) {
+    // Hỗ trợ cả JSON và FormData (nếu update logo công ty)
     return this.request(`/companies/${companyId}`, {
       method: 'PUT',
       body: companyData,
@@ -260,25 +302,52 @@ class ApiService {
     return this.request('/health');
   }
 
-  // Check if user is authenticated
+  // Helper: Check if user is authenticated
   isAuthenticated() {
     return !!this.token;
   }
 
-  // Check if user is employer
+  // Helper: Check user roles
   isEmployer() {
-    return this.currentUser?.userType === 'employer';
+    return this.currentUser?.userType === 'employer' || this.currentUser?.role === 'employer';
   }
 
-  // Check if user is student
   isStudent() {
-    return this.currentUser?.userType === 'student';
+    return this.currentUser?.userType === 'student' || this.currentUser?.role === 'student';
   }
 
-  // Get current user data
+  isAdmin() {
+    return this.currentUser?.userType === 'admin' || this.currentUser?.role === 'admin';
+  }
+
+  // Get current user data safely
   getCurrentUserData() {
     return this.currentUser;
   }
+    // ========== EXTRA METHODS YOU REQUESTED ==========
+
+  async getEmployerJobs() {
+    return this.request('/jobs/employer/my-jobs');
+  }
+
+  async getEmployerApplications() {
+    return this.request('/applications/employer/job-applications');
+  }
+
+  async createJob(jobData) {
+    return this.request('/jobs', {
+      method: 'POST',
+      body: jobData,
+    });
+  }
+
+  async updateApplicationStatus(applicationId, statusData) {
+    return this.request(`/applications/${applicationId}/status`, {
+      method: 'PUT',
+      body: statusData,
+    });
+  }
+
 }
 
 // Create singleton instance
