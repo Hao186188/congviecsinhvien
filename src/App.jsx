@@ -3,10 +3,11 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import Home from './pages/Home'
 import JobListing from './pages/JobListing'
-import JobDetail from './pages/JobDetail' // ✅ CHỈ IMPORT 1 LẦN
+import JobDetail from './pages/JobDetail'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import EmployerDashboard from './pages/EmployerDashboard'
+import Unauthorized from './pages/Unauthorized'
 import ProtectedRoute from './components/ProtectedRoute'
 
 function App() {
@@ -21,16 +22,27 @@ function App() {
             <Route path="/jobs/:id" element={<JobDetail />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/unauthorized" element={<Unauthorized />} />
             
             {/* Protected Routes */}
             <Route 
               path="/employer/dashboard" 
               element={
-                <ProtectedRoute requireEmployer={true}>
+                <ProtectedRoute requireAuth={true} allowedRoles={['employer']}>
                   <EmployerDashboard />
                 </ProtectedRoute>
               } 
             />
+            
+            {/* Student Routes (có thể thêm sau) */}
+            {/* <Route 
+              path="/student/dashboard" 
+              element={
+                <ProtectedRoute requireAuth={true} allowedRoles={['student']}>
+                  <StudentDashboard />
+                </ProtectedRoute>
+              } 
+            /> */}
             
             {/* 404 Page */}
             <Route path="*" element={<NotFound />} />

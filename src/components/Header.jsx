@@ -14,7 +14,7 @@ const Header = () => {
     <header>
       <div className="container">
         <div className="logo">
-          <h1><Link to="/">PartTimeJob</Link></h1>
+          <h1><Link to="/">CĐ9+QTM3K14</Link></h1>
           <p>Việc làm bán thời gian cho học sinh, sinh viên</p>
         </div>
         <nav>

@@ -55,7 +55,7 @@ function Home() {
       <header>
         <div className="container">
           <div className="logo">
-            <h1><Link to="/">PartTimeJob</Link></h1>
+            <h1><Link to="/">CĐ9+QTM3K14</Link></h1>
             <p>Việc làm bán thời gian cho học sinh, sinh viên</p>
           </div>
           <nav>
@@ -88,9 +88,9 @@ function Home() {
                 onChange={(e) => setLocation(e.target.value)}
               >
                 <option value="">Tất cả địa điểm</option>
-                <option value="hanoi">Hà Nội</option>
-                <option value="hcm">TP. Hồ Chí Minh</option>
-                <option value="danang">Đà Nẵng</option>
+                <option value="hanoi">Rạch Giá</option>
+                <option value="hcm">Rạch Sỏi</option>
+                <option value="danang">Kiên Lương</option>
               </select>
               <button type="submit" className="btn-search">
                 Tìm kiếm

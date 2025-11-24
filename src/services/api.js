@@ -114,39 +114,55 @@ class ApiService {
 
   // ========== AUTH METHODS ==========
   async register(userData) {
-    const result = await this.request('/auth/register', {
-      method: 'POST',
-      body: userData,
-    });
+    try {
+      const result = await this.request('/auth/register', {
+        method: 'POST',
+        body: userData,
+      });
 
-    // Xử lý linh hoạt cấu trúc trả về
-    const token = result.token || result.data?.token;
-    const user = result.user || result.data?.user;
+      // Xử lý linh hoạt cấu trúc trả về
+      const token = result.token || result.data?.token;
+      const user = result.user || result.data?.user;
 
-    if (token) {
-      this.setToken(token);
-      this.setCurrentUser(user);
+      if (token && user) {
+        this.setToken(token);
+        this.setCurrentUser(user);
+        return { success: true, data: { user, token } };
+      }
+
+      return { success: false, message: result.message || 'Đăng ký thất bại' };
+    } catch (error) {
+      return { 
+        success: false, 
+        message: error.message || 'Đăng ký thất bại' 
+      };
     }
-
-    return result;
   }
 
   async login(credentials) {
-    const result = await this.request('/auth/login', {
-      method: 'POST',
-      body: credentials,
-    });
+    try {
+      const result = await this.request('/auth/login', {
+        method: 'POST',
+        body: credentials,
+      });
 
-    // Xử lý linh hoạt cấu trúc trả về
-    const token = result.token || result.data?.token;
-    const user = result.user || result.data?.user;
+      // Xử lý linh hoạt cấu trúc trả về
+      const token = result.token || result.data?.token;
+      const user = result.user || result.data?.user;
 
-    if (token) {
-      this.setToken(token);
-      this.setCurrentUser(user);
+      if (token && user) {
+        this.setToken(token);
+        this.setCurrentUser(user);
+        return { success: true, data: { user, token } };
+      }
+
+      return { success: false, message: result.message || 'Đăng nhập thất bại' };
+    } catch (error) {
+      return { 
+        success: false, 
+        message: error.message || 'Đăng nhập thất bại' 
+      };
     }
-
-    return result;
   }
 
   async logout() {
@@ -162,7 +178,16 @@ class ApiService {
   }
 
   async getCurrentUser() {
-    return this.request('/auth/me');
+    try {
+      const result = await this.request('/auth/me');
+      if (result.success) {
+        this.setCurrentUser(result.data.user);
+      }
+      return result;
+    } catch (error) {
+      console.error('Get current user failed:', error);
+      throw error;
+    }
   }
 
   async updateProfile(profileData) {
@@ -202,10 +227,18 @@ class ApiService {
   }
 
   async createJob(jobData) {
-    return this.request('/jobs', {
-      method: 'POST',
-      body: jobData,
-    });
+    console.log('🟡 [API] Creating job with data:', jobData);
+    try {
+      const result = await this.request('/jobs', {
+        method: 'POST',
+        body: jobData,
+      });
+      console.log('🟢 [API] Job creation response:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ [API] Job creation failed:', error);
+      throw error;
+    }
   }
 
   async updateJob(id, jobData) {
@@ -315,7 +348,7 @@ class ApiService {
 
   // Helper: Check if user is authenticated
   isAuthenticated() {
-    return !!this.token;
+    return !!this.token && !!this.currentUser;
   }
 
   // Helper: Check user roles

@@ -22,6 +22,7 @@ const ProtectedRoute = ({
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
+        {/* Có thể thay bằng một Component Spinner chuyên dụng */}
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
@@ -37,6 +38,7 @@ const ProtectedRoute = ({
 
     // Kiểm tra Phân quyền (Role-based access)
     // Nếu có roles được định nghĩa và user không có trong danh sách cho phép
+    // Phải kiểm tra user tồn tại trước khi truy cập user.userType
     if (allowedRoles.length > 0 && user && !allowedRoles.includes(user.userType)) {
       // Chuyển hướng đến trang Bị cấm/Không có quyền
       return <Navigate to="/unauthorized" replace />;

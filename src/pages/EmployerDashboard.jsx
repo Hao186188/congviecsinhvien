@@ -23,7 +23,6 @@ const EmployerDashboard = () => {
   // Form Đăng tin - Cập nhật mapping đúng với backend schema
   const [jobForm, setJobForm] = useState({
     title: '',
-    company: user?.company || user?.companyName || user?.name || '',
     location: '',
     salary: '', 
     jobType: 'Bán thời gian',
@@ -105,7 +104,7 @@ const EmployerDashboard = () => {
     setJobForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Xử lý Đăng tin - Phiên bản có retry
+  // Xử lý Đăng tin - Phiên bản đã sửa
   const handleJobSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -114,7 +113,7 @@ const EmployerDashboard = () => {
 
       console.log('🟡 Bắt đầu xử lý đăng tin...');
 
-      // Validation cơ bản
+      // Validation cơ bản - CHỈ các trường thực sự required
       if (!jobForm.title || !jobForm.location || !jobForm.description) {
         const errorMsg = 'Vui lòng điền đầy đủ các trường bắt buộc (tiêu đề, địa điểm, mô tả)';
         console.log('❌ Validation failed:', errorMsg);
@@ -122,96 +121,99 @@ const EmployerDashboard = () => {
         return setError(errorMsg);
       }
 
-      // Chuẩn bị dữ liệu đơn giản - CHỈ CÁC TRƯỜNG THỰC SỰ CẦN THIẾT
+      // 🔥 CHUẨN BỊ DỮ LIỆU ĐÚNG VỚI BACKEND SCHEMA
       const jobData = {
         title: jobForm.title,
-        company: jobForm.company || user?.name || 'Công ty của tôi',
         location: jobForm.location,
         description: jobForm.description,
         jobType: jobForm.jobType,
-        category: jobForm.category
+        category: jobForm.category,
+        
+        // Các trường optional - CHỈ gửi nếu có giá trị
+        ...(jobForm.salary && { salary: jobForm.salary }),
+        ...(jobForm.requirements && { requirements: jobForm.requirements }),
+        ...(jobForm.benefits && { benefits: jobForm.benefits }),
+        ...(jobForm.contactEmail && { contactEmail: jobForm.contactEmail }),
+        ...(jobForm.contactPhone && { contactPhone: jobForm.contactPhone }),
+        ...(jobForm.workHours && { workHours: jobForm.workHours }),
+        ...(jobForm.vacancies && { vacancies: parseInt(jobForm.vacancies) }),
+        ...(jobForm.experience && { experience: jobForm.experience }),
+        ...(jobForm.education && { education: jobForm.education }),
+        ...(jobForm.applicationDeadline && { 
+          applicationDeadline: new Date(jobForm.applicationDeadline).toISOString() 
+        })
       };
 
-      // Thêm các trường optional nếu có
-      if (jobForm.salary) jobData.salary = jobForm.salary;
-      if (jobForm.requirements) jobData.requirements = jobForm.requirements;
-      if (jobForm.benefits) jobData.benefits = jobForm.benefits;
-      if (jobForm.contactEmail) jobData.contactEmail = jobForm.contactEmail;
-      if (jobForm.contactPhone) jobData.contactPhone = jobForm.contactPhone;
-      if (jobForm.workHours) jobData.workHours = jobForm.workHours;
-      if (jobForm.vacancies) jobData.vacancies = jobForm.vacancies;
-      if (jobForm.experience) jobData.experience = jobForm.experience;
-      if (jobForm.education) jobData.education = jobForm.education;
-      if (jobForm.applicationDeadline) jobData.applicationDeadline = jobForm.applicationDeadline;
+      console.log('=== DEBUG JOB DATA ===');
+      console.log('Title:', jobForm.title);
+      console.log('Location:', jobForm.location);
+      console.log('Description length:', jobForm.description?.length);
+      console.log('Job Type:', jobForm.jobType);
+      console.log('Category:', jobForm.category);
+      console.log('Full jobData:', JSON.stringify(jobData, null, 2));
 
       console.log('📤 Dữ liệu gửi đến backend:', jobData);
 
-      // Gửi request với retry logic
-      let retries = 3;
-      let lastError = null;
+      // Gửi request
+      const response = await apiService.createJob(jobData);
+      
+      console.log('✅ Phản hồi từ backend:', response);
 
-      while (retries > 0) {
-        try {
-          const response = await apiService.createJob(jobData);
-          
-          console.log('✅ Phản hồi từ backend:', response);
-
-          if (response.success) {
-            setShowJobModal(false);
-            
-            // Reset form
-            setJobForm({
-              title: '',
-              company: user?.company || user?.companyName || user?.name || '',
-              location: '',
-              salary: '', 
-              jobType: 'Bán thời gian',
-              category: 'Khác',
-              description: '',
-              requirements: '',
-              benefits: '',
-              contactEmail: user?.email || '',
-              contactPhone: user?.phone || '',
-              applicationDeadline: '',
-              workHours: '',
-              vacancies: 1,
-              experience: 'Không yêu cầu',
-              education: 'Không yêu cầu'
-            });
-            
-            await loadDashboardData();
-            alert('✅ Đăng tin tuyển dụng thành công!');
-            setLoading(false);
-            return;
-          } else {
-            throw new Error(response.message || 'Đăng tin thất bại');
-          }
-        } catch (err) {
-          lastError = err;
-          retries--;
-          console.log(`🔄 Retry ${3 - retries}/3 after error:`, err.message);
-          
-          if (retries > 0) {
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
-          }
-        }
+      if (response.success) {
+        setShowJobModal(false);
+        
+        // Reset form
+        setJobForm({
+          title: '',
+          location: '',
+          salary: '', 
+          jobType: 'Bán thời gian',
+          category: 'Khác',
+          description: '',
+          requirements: '',
+          benefits: '',
+          contactEmail: user?.email || '',
+          contactPhone: user?.phone || '',
+          applicationDeadline: '',
+          workHours: '',
+          vacancies: 1,
+          experience: 'Không yêu cầu',
+          education: 'Không yêu cầu'
+        });
+        
+        await loadDashboardData();
+        alert('✅ Đăng tin tuyển dụng thành công!');
+      } else {
+        throw new Error(response.message || 'Đăng tin thất bại');
       }
-
-      // Nếu hết retry mà vẫn lỗi
-      throw lastError;
 
     } catch (err) {
       console.error('❌ Lỗi khi đăng tin:', err);
-      setLoading(false);
       
-      // Hiển thị lỗi thân thiện
-      if (err.message?.includes('Validation failed')) {
-        setError('Dữ liệu không hợp lệ. Vui lòng kiểm tra lại thông tin.');
-      } else if (err.message?.includes('Network') || err.message?.includes('fetch')) {
-        setError('Lỗi kết nối mạng. Vui lòng kiểm tra internet và thử lại.');
-      } else {
-        setError(err.message || 'Lỗi không xác định khi đăng tin');
+      // 🔥 HIỂN THỊ LỖI CHI TIẾT TỪ SERVER
+      let errorMessage = 'Lỗi không xác định khi đăng tin';
+      
+      if (err.response?.data) {
+        const serverError = err.response.data;
+        
+        // Lỗi validation từ server
+        if (serverError.errors && Array.isArray(serverError.errors)) {
+          errorMessage = serverError.errors.map(error => 
+            `${error.field || 'field'}: ${error.message}`
+          ).join(', ');
+        } 
+        // Lỗi thông báo từ server
+        else if (serverError.message) {
+          errorMessage = serverError.message;
+        }
+      } else if (err.message) {
+        errorMessage = err.message;
       }
+      
+      setError(`Lỗi đăng tin: ${errorMessage}`);
+      
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -450,6 +452,21 @@ const EmployerDashboard = () => {
             <form onSubmit={handleJobSubmit}>
               <div className="modal-body">
                 
+                {/* Hiển thị lỗi chi tiết */}
+                {error && (
+                  <div style={{
+                    background: '#fee',
+                    border: '1px solid #fcc',
+                    color: '#c33',
+                    padding: '10px',
+                    borderRadius: '6px',
+                    marginBottom: '20px',
+                    fontSize: '14px'
+                  }}>
+                    ⚠️ {error}
+                  </div>
+                )}
+
                 <div className="form-row">
                   <div className="form-group">
                     <label>Chức danh công việc *</label>
@@ -460,23 +477,10 @@ const EmployerDashboard = () => {
                       onChange={handleJobFormChange} 
                       required
                       minLength="5"
+                      maxLength="100"
                       placeholder="VD: Nhân viên phục vụ part-time"
                     />
                   </div>
-                  <div className="form-group">
-                    <label>Tên công ty *</label>
-                    <input 
-                      type="text" 
-                      name="company" 
-                      value={jobForm.company} 
-                      onChange={handleJobFormChange} 
-                      required
-                      minLength="2"
-                    />
-                  </div>
-                </div>
-
-                <div className="form-row">
                   <div className="form-group">
                     <label>Địa điểm làm việc *</label>
                     <input 
@@ -486,23 +490,24 @@ const EmployerDashboard = () => {
                       onChange={handleJobFormChange} 
                       required
                       minLength="3"
+                      maxLength="200"
                       placeholder="VD: Quận 1, TP.HCM"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Mức lương *</label>
-                    <input 
-                      type="text" 
-                      name="salary" 
-                      value={jobForm.salary} 
-                      onChange={handleJobFormChange} 
-                      required
-                      placeholder="VD: 25,000 - 30,000 VNĐ/giờ"
                     />
                   </div>
                 </div>
 
                 <div className="form-row">
+                  <div className="form-group">
+                    <label>Mức lương</label>
+                    <input 
+                      type="text" 
+                      name="salary" 
+                      value={jobForm.salary} 
+                      onChange={handleJobFormChange} 
+                      placeholder="VD: 25,000 - 30,000 VNĐ/giờ"
+                      maxLength="100"
+                    />
+                  </div>
                   <div className="form-group">
                     <label>Loại công việc *</label>
                     <select name="jobType" value={jobForm.jobType} onChange={handleJobFormChange} required>
@@ -512,6 +517,9 @@ const EmployerDashboard = () => {
                       <option value="Freelance">Freelance</option>
                     </select>
                   </div>
+                </div>
+
+                <div className="form-row">
                   <div className="form-group">
                     <label>Danh mục *</label>
                     <select name="category" value={jobForm.category} onChange={handleJobFormChange} required>
@@ -520,8 +528,20 @@ const EmployerDashboard = () => {
                       <option value="Gia sư">Gia sư</option>
                       <option value="Công nghệ">Công nghệ</option>
                       <option value="Giao hàng">Giao hàng</option>
+                      <option value="Văn phòng">Văn phòng</option>
                       <option value="Khác">Khác</option>
                     </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Số lượng tuyển</label>
+                    <input 
+                      type="number" 
+                      name="vacancies" 
+                      value={jobForm.vacancies} 
+                      onChange={handleJobFormChange}
+                      min="1"
+                      max="100"
+                    />
                   </div>
                 </div>
 
@@ -533,46 +553,45 @@ const EmployerDashboard = () => {
                     onChange={handleJobFormChange} 
                     rows="5" 
                     required
-                    minLength="50"
+                    minLength="10"
+                    maxLength="5000"
                     placeholder="Mô tả chi tiết về công việc, nhiệm vụ, trách nhiệm..."
                   />
                 </div>
 
                 <div className="form-group">
-                  <label>Yêu cầu công việc *</label>
+                  <label>Yêu cầu công việc</label>
                   <textarea 
                     name="requirements" 
                     value={jobForm.requirements} 
                     onChange={handleJobFormChange} 
                     rows="3"
-                    required
-                    minLength="10"
+                    maxLength="2000"
                     placeholder="Yêu cầu về kỹ năng, kinh nghiệm, bằng cấp..."
                   />
                 </div>
 
                 <div className="form-group">
-                  <label>Quyền lợi *</label>
+                  <label>Quyền lợi</label>
                   <textarea 
                     name="benefits" 
                     value={jobForm.benefits} 
                     onChange={handleJobFormChange} 
                     rows="3"
-                    required
-                    minLength="10"
+                    maxLength="2000"
                     placeholder="Quyền lợi khi làm việc, phúc lợi..."
                   />
                 </div>
 
                 <div className="form-row">
                   <div className="form-group">
-                    <label>Email liên hệ *</label>
+                    <label>Email liên hệ</label>
                     <input 
                       type="email" 
                       name="contactEmail" 
                       value={jobForm.contactEmail} 
                       onChange={handleJobFormChange} 
-                      required
+                      placeholder="email@congty.com"
                     />
                   </div>
                   <div className="form-group">
@@ -583,6 +602,7 @@ const EmployerDashboard = () => {
                       value={jobForm.contactPhone} 
                       onChange={handleJobFormChange}
                       placeholder="VD: 0901234567"
+                      pattern="^(03|05|07|08|09|01[2|6|8|9])+([0-9]{8})\b$"
                     />
                   </div>
                 </div>
@@ -606,6 +626,30 @@ const EmployerDashboard = () => {
                       <option value="Cao đẳng">Cao đẳng</option>
                       <option value="Đại học">Đại học</option>
                     </select>
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Giờ làm việc</label>
+                    <input 
+                      type="text" 
+                      name="workHours" 
+                      value={jobForm.workHours} 
+                      onChange={handleJobFormChange}
+                      placeholder="VD: Linh hoạt, 4h/ngày"
+                      maxLength="100"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Hạn nộp hồ sơ</label>
+                    <input 
+                      type="date" 
+                      name="applicationDeadline" 
+                      value={jobForm.applicationDeadline} 
+                      onChange={handleJobFormChange}
+                      min={new Date().toISOString().split('T')[0]}
+                    />
                   </div>
                 </div>
 
